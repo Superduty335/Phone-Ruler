@@ -3,6 +3,8 @@ package com.siteruler.app
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
@@ -10,7 +12,12 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.os.Bundle
+import android.text.InputType
+import android.view.View
+import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.google.ar.core.ArCoreApk
@@ -25,12 +32,16 @@ import com.google.ar.core.TrackingFailureReason
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.UnavailableException
+import com.siteruler.app.export.Exporter
 import com.siteruler.app.export.Share
+import com.siteruler.app.model.Coords
 import com.siteruler.app.model.Format
 import com.siteruler.app.model.Job
+import com.siteruler.app.model.Known
 import com.siteruler.app.model.LineKind
 import com.siteruler.app.model.LineRecord
 import com.siteruler.app.model.RoomRecord
+import com.siteruler.app.model.SurveyPoint
 import com.siteruler.app.model.Units
 import com.siteruler.app.model.Vec2
 import com.siteruler.app.render.BackgroundRenderer
@@ -89,6 +100,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
             MeasureController.Mode.DISTANCE to findViewById(R.id.modeDistance),
             MeasureController.Mode.HEIGHT to findViewById(R.id.modeHeight),
             MeasureController.Mode.ROOM to findViewById(R.id.modeRoom),
+            MeasureController.Mode.POINTS to findViewById(R.id.modePoints),
         )
         rotationHelper = DisplayRotationHelper(this)
 
@@ -160,6 +172,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
                     return
                 }
                 session = Session(this).also { configure(it) }
+                // Each AR session has its own coordinate frame, so its points form a new setup.
+                job.newSetup()
+                saveJob()
             } catch (e: UnavailableException) {
                 statusText.text = "ARCore isn't available on this phone: ${e.javaClass.simpleName}"
                 return
@@ -366,17 +381,162 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         }
     }
 
+    override fun onPointShot(liveId: Int, x: Double, y: Double, z: Double) {
+        runOnUiThread { showPointDialog(liveId, x, y, z) }
+    }
+
+    override fun onPointsRefined(positions: Map<Int, DoubleArray>) {
+        runOnUiThread {
+            var changed = false
+            for (i in job.points.indices) {
+                val p = job.points[i]
+                val pos = positions[p.number] ?: continue
+                if (p.setup != job.setup) continue
+                job.points[i] = p.copy(x = pos[0], y = pos[1], z = pos[2])
+                changed = true
+            }
+            if (changed) saveJob()
+        }
+    }
+
+    // ---- Points ----
+
+    private fun gridFactor() = if (units == Units.IMPERIAL) 1 / 0.3048 else 1.0
+    private fun gridUnit() = if (units == Units.IMPERIAL) "ft" else "m"
+
+    private fun showPointDialog(liveId: Int, x: Double, y: Double, z: Double) {
+        val suggested = job.nextPointNumber
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        fun field(hint: String, type: Int) = EditText(this).apply { this.hint = hint; inputType = type }
+        val decimal = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+        val numberField = field("Point number", InputType.TYPE_CLASS_NUMBER).apply { setText(suggested.toString()) }
+        val descField = field("Description (BM, IP, TC, EP...)", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS)
+        val control = CheckBox(this).apply { text = "Control point (I know its coordinates)" }
+        val nField = field("North (${gridUnit()})", decimal)
+        val eField = field("East (${gridUnit()})", decimal)
+        val zField = field("Elevation (${gridUnit()}, optional)", decimal)
+        val copy = TextView(this).apply {
+            text = "Use the coordinates of an earlier point"
+            setTextColor(0xFF1E88E5.toInt())
+            setPadding(0, pad / 2, 0, pad / 2)
+        }
+        val knownBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            addView(nField); addView(eField); addView(zField); addView(copy)
+        }
+        control.setOnCheckedChangeListener { _, on -> knownBox.visibility = if (on) View.VISIBLE else View.GONE }
+        copy.setOnClickListener {
+            val grid = Coords.compute(job.points, units).first.filter { it.setup != job.setup }
+            if (grid.isEmpty()) {
+                toast("No points from earlier setups yet")
+                return@setOnClickListener
+            }
+            val f = gridFactor()
+            AlertDialog.Builder(this)
+                .setTitle("Copy coordinates from")
+                .setItems(grid.map { "${it.number} ${it.desc}  N %.3f  E %.3f".format(it.n * f, it.e * f) }.toTypedArray()) { _, i ->
+                    val g = grid[i]
+                    nField.setText("%.3f".format(java.util.Locale.US, g.n * f))
+                    eField.setText("%.3f".format(java.util.Locale.US, g.e * f))
+                    zField.setText("%.3f".format(java.util.Locale.US, g.z * f))
+                    if (descField.text.isBlank()) descField.setText(g.desc)
+                }
+                .show()
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(numberField); addView(descField); addView(control); addView(knownBox)
+        }
+
+        var saved = false
+        AlertDialog.Builder(this)
+            .setTitle("Shot point")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setPositiveButton("Save") { _, _ ->
+                saved = true
+                var number = numberField.text.toString().toIntOrNull() ?: suggested
+                if (job.points.any { it.number == number }) {
+                    toast("Point $number already exists, saved as ${job.nextPointNumber}")
+                    number = job.nextPointNumber
+                }
+                val known = if (control.isChecked) {
+                    val toM = 1 / gridFactor()
+                    val n = nField.text.toString().toDoubleOrNull()
+                    val e = eField.text.toString().toDoubleOrNull()
+                    if (n == null || e == null) {
+                        toast("North and East are needed for control; saved as a regular point")
+                        null
+                    } else Known(n * toM, e * toM, zField.text.toString().toDoubleOrNull()?.times(toM))
+                } else null
+                val desc = descField.text.toString().trim()
+                job.points.add(SurveyPoint(number, desc, job.setup, x, y, z, known))
+                saveJob()
+                val label = if (desc.isEmpty()) "$number" else "$number $desc"
+                pending.add { controller.assignPoint(liveId, number, label) }
+                if (known != null) toast(setupSummary(job.setup))
+            }
+            .setNegativeButton("Discard", null)
+            .setOnDismissListener { if (!saved) pending.add { controller.dropPoint(liveId) } }
+            .show()
+    }
+
+    private fun setupSummary(setup: Int): String {
+        val fit = Coords.compute(job.points, units).second.firstOrNull { it.setup == setup } ?: return ""
+        return "Setup $setup: " + when {
+            fit.assumed -> "assumed coordinates (no control yet)"
+            fit.controls == 1 -> "1 control point. Shoot one more to fix the bearing."
+            else -> "tied to ${fit.controls} control points, worst fit ${Format.length(fit.maxResidual, units)}"
+        }
+    }
+
+    private fun showPoints() {
+        val (grid, fits) = Coords.compute(job.points, units)
+        val f = gridFactor()
+        val header = fits.map { setupSummary(it.setup) }
+        val rows = grid.map { g ->
+            val ctl = if (job.points.firstOrNull { it.number == g.number }?.known != null) " (control)" else ""
+            "${g.number} ${g.desc}$ctl\nN %.3f   E %.3f   Z %.3f".format(g.n * f, g.e * f, g.z * f)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Points (${gridUnit()})")
+            .setItems((header + rows).toTypedArray()) { _, which ->
+                val i = which - header.size
+                if (i < 0) return@setItems
+                val num = grid[i].number
+                AlertDialog.Builder(this)
+                    .setMessage("Delete point $num?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        job.points.removeAll { it.number == num }
+                        saveJob()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+            .setPositiveButton("Close", null)
+            .setNeutralButton("Copy for SiteMath") { _, _ ->
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("SiteRuler points", Exporter.pnezd(job, units)))
+                toast("Copied ${grid.size} points as P,N,E,Z,D")
+            }
+            .show()
+    }
+
     // ---- Job, export ----
 
     private fun showJob() {
         val items = job.rooms.map { r ->
             "${r.name}: ${r.corners.size} walls, ${Format.area(r.area, units)}" +
                 (r.heightMeters?.let { ", clg ${Format.length(it, units)}" } ?: "")
-        } + job.lines.map { "${it.name}: ${Format.length(it.meters, units)}" }
+        } + job.lines.map { "${it.name}: ${Format.length(it.meters, units)}" } +
+            (if (job.points.isEmpty()) emptyList() else listOf("Points: ${job.points.size} (tap to view)"))
 
         val builder = AlertDialog.Builder(this).setTitle(job.name)
         if (items.isEmpty()) builder.setMessage("Nothing measured yet.")
-        else builder.setItems(items.toTypedArray()) { _, which -> confirmDelete(which) }
+        else builder.setItems(items.toTypedArray()) { _, which ->
+            if (which >= job.rooms.size + job.lines.size) showPoints() else confirmDelete(which)
+        }
         builder
             .setPositiveButton("Close", null)
             .setNeutralButton("Rename job") { _, _ -> renameJob() }

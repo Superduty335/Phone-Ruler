@@ -27,9 +27,13 @@ class MeasureController(private val listener: Listener) {
     interface Listener {
         fun onLineMeasured(kind: LineKind, meters: Double)
         fun onRoomMeasured(corners: List<Vec2>, heightMeters: Double?)
+        /** A survey point was shot; the UI names it and then calls [assignPoint] or [dropPoint]. */
+        fun onPointShot(liveId: Int, x: Double, y: Double, z: Double)
+        /** Current positions of this session's numbered points, after ARCore refines its map. */
+        fun onPointsRefined(positions: Map<Int, DoubleArray>)
     }
 
-    enum class Mode { DISTANCE, HEIGHT, ROOM }
+    enum class Mode { DISTANCE, HEIGHT, ROOM, POINTS }
 
     data class Snapshot(
         val labels: List<OverlayView.Label>,
@@ -40,6 +44,7 @@ class MeasureController(private val listener: Listener) {
 
     private class LiveLine(val a: Anchor, val b: Anchor, val kind: LineKind)
     private class LiveRoom(val corners: List<Anchor>, var ceilingY: Float? = null)
+    private class LivePoint(val id: Int, val anchor: Anchor, var number: Int = 0, var label: String = "")
 
     var mode = Mode.DISTANCE
         private set
@@ -49,6 +54,8 @@ class MeasureController(private val listener: Listener) {
     private val rooms = mutableListOf<LiveRoom>()
     /** A closed room outline waiting for its ceiling height (or a skip). */
     private var pendingRoom: LiveRoom? = null
+    private val points = mutableListOf<LivePoint>()
+    private var nextLiveId = 1
 
     fun setMode(m: Mode) {
         if (m == mode) return
@@ -62,6 +69,13 @@ class MeasureController(private val listener: Listener) {
         pendingRoom?.let { room ->
             room.ceilingY = hit.hitPose.ty()
             finishRoom(room)
+            return
+        }
+        if (mode == Mode.POINTS) {
+            val p = LivePoint(nextLiveId++, hit.createAnchor())
+            points.add(p)
+            val pos = p.anchor.pos()
+            listener.onPointShot(p.id, pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble())
             return
         }
         active.add(hit.createAnchor())
@@ -95,7 +109,29 @@ class MeasureController(private val listener: Listener) {
         return null
     }
 
+    fun assignPoint(liveId: Int, number: Int, label: String) {
+        val p = points.firstOrNull { it.id == liveId } ?: return
+        p.number = number
+        p.label = label
+        refreshPoints()
+    }
+
+    fun dropPoint(liveId: Int) {
+        points.firstOrNull { it.id == liveId }?.let { it.anchor.detach(); points.remove(it) }
+    }
+
+    /** Reports where ARCore now places every numbered point; anchors move as tracking improves. */
+    fun refreshPoints() {
+        val map = points.filter { it.number > 0 && it.anchor.isLive() }.associate { p ->
+            val t = p.anchor.pos()
+            p.number to doubleArrayOf(t[0].toDouble(), t[1].toDouble(), t[2].toDouble())
+        }
+        if (map.isNotEmpty()) listener.onPointsRefined(map)
+    }
+
     fun clear() {
+        points.forEach { it.anchor.detach() }
+        points.clear()
         active.forEach { it.detach() }
         lines.forEach { it.a.detach(); it.b.detach() }
         rooms.forEach { r -> r.corners.forEach { it.detach() } }
@@ -150,6 +186,16 @@ class MeasureController(private val listener: Listener) {
             }
         }
 
+        // Survey points.
+        val shot = points.filter { it.anchor.isLive() }
+        if (shot.isNotEmpty()) {
+            renderer.draw(GLES20.GL_POINTS, shot.map { it.anchor.pos() }.flatten(), viewProj, SHOT_COLOR, 22f)
+            for (p in shot) if (p.number > 0) {
+                val t = p.anchor.pos()
+                label(floatArrayOf(t[0], t[1] + 0.06f, t[2]), p.label)
+            }
+        }
+
         // In-progress points and the rubber-band line to the reticle.
         val activePts = active.filter { it.isLive() }.map { it.pos() }
         if (activePts.isNotEmpty()) {
@@ -179,7 +225,7 @@ class MeasureController(private val listener: Listener) {
                 val (from, to, meters) = when (mode) {
                     Mode.DISTANCE -> Triple(last, aim, measure(last, aim, LineKind.DISTANCE))
                     Mode.HEIGHT -> Triple(last, floatArrayOf(last[0], aim[1], last[2]), measure(last, aim, LineKind.HEIGHT))
-                    Mode.ROOM -> {
+                    Mode.ROOM, Mode.POINTS -> {
                         val y = activePts[0][1]
                         val a = floatArrayOf(last[0], y, last[2])
                         val b = floatArrayOf(aim[0], y, aim[2])
@@ -188,6 +234,14 @@ class MeasureController(private val listener: Listener) {
                 }
                 renderer.draw(GLES20.GL_LINES, from + to, viewProj, PREVIEW_COLOR, 4f)
                 live = Format.length(meters, units)
+            } else if (mode == Mode.POINTS) {
+                val last = shot.lastOrNull { it.number > 0 }
+                if (last != null) {
+                    val p = last.anchor.pos()
+                    renderer.draw(GLES20.GL_LINES, p + aim, viewProj, PREVIEW_COLOR, 4f)
+                    live = "From ${last.label}: " + Format.length(horizontal(p, aim), units) +
+                        "  ΔZ " + Format.length((aim[1] - p[1]).toDouble(), units)
+                }
             }
         }
 
@@ -200,6 +254,7 @@ class MeasureController(private val listener: Listener) {
         return when (mode) {
             Mode.DISTANCE -> if (n == 0) "Aim at the start point and tap +." else "Aim at the end point and tap +."
             Mode.HEIGHT -> if (n == 0) "Aim at the floor and tap +." else "Aim at the top point and tap +. Only the vertical part counts."
+            Mode.POINTS -> "Aim at the point and tap +. Shoot at least 2 known points as control to get real coordinates."
             Mode.ROOM -> when {
                 n == 0 -> "Aim at the floor in a corner and tap +. Work your way around the room."
                 n < 3 -> "Aim at the next corner and tap +. ($n so far)"
@@ -212,6 +267,7 @@ class MeasureController(private val listener: Listener) {
         private const val LINE_COLOR = 0xFFFFC107.toInt()
         private const val ROOM_COLOR = 0xFF40C4FF.toInt()
         private const val POINT_COLOR = 0xFFFFFFFF.toInt()
+        private const val SHOT_COLOR = 0xFFFF5252.toInt()
         private const val PREVIEW_COLOR = 0xCCFFFFFF.toInt()
 
         private fun Anchor.isLive() = trackingState != TrackingState.STOPPED

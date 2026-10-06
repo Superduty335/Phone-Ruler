@@ -30,6 +30,7 @@
             <TextView android:id="@+id/modeDistance" style="@style/ModeTab" android:text="Distance" />
             <TextView android:id="@+id/modeHeight" style="@style/ModeTab" android:text="Height" />
             <TextView android:id="@+id/modeRoom" style="@style/ModeTab" android:text="Room" />
+            <TextView android:id="@+id/modePoints" style="@style/ModeTab" android:text="Points" />
             <TextView android:id="@+id/ruler" style="@style/ModeTab" android:text="Ruler" />
         </LinearLayout>
 

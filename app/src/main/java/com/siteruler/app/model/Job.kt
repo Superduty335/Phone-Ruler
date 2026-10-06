@@ -73,8 +73,18 @@ data class RoomRecord(
 class Job(var name: String = "Job") {
     val rooms = mutableListOf<RoomRecord>()
     val lines = mutableListOf<LineRecord>()
+    val points = mutableListOf<SurveyPoint>()
+    /** Setup number for points shot in the current AR session. */
+    var setup = 1
 
-    val isEmpty: Boolean get() = rooms.isEmpty() && lines.isEmpty()
+    val isEmpty: Boolean get() = rooms.isEmpty() && lines.isEmpty() && points.isEmpty()
+
+    val nextPointNumber: Int get() = (points.maxOfOrNull { it.number } ?: 0) + 1
+
+    /** Starts a new setup unless the current one has no points yet. */
+    fun newSetup() {
+        if (points.any { it.setup == setup }) setup = (points.maxOf { it.setup }) + 1
+    }
 
     /** Adds a newly measured room to the right of everything already on the plan. */
     fun addRoom(room: RoomRecord) {
@@ -104,6 +114,18 @@ class Job(var name: String = "Job") {
         put("lines", JSONArray().apply {
             lines.forEach { l ->
                 put(JSONObject().put("name", l.name).put("kind", l.kind.name).put("meters", l.meters))
+            }
+        })
+        put("setup", setup)
+        put("points", JSONArray().apply {
+            points.forEach { p ->
+                put(JSONObject().apply {
+                    put("number", p.number); put("desc", p.desc); put("setup", p.setup)
+                    put("x", p.x); put("y", p.y); put("z", p.z); put("source", p.source.name)
+                    p.known?.let { k ->
+                        put("known", JSONObject().put("n", k.n).put("e", k.e).put("z", k.z ?: JSONObject.NULL))
+                    }
+                })
             }
         })
     }
@@ -143,6 +165,21 @@ class Job(var name: String = "Job") {
                 val l = lines.getJSONObject(i)
                 job.lines.add(
                     LineRecord(l.getString("name"), LineKind.valueOf(l.getString("kind")), l.getDouble("meters"))
+                )
+            }
+            job.setup = o.optInt("setup", 1)
+            val pts = o.optJSONArray("points") ?: JSONArray()
+            for (i in 0 until pts.length()) {
+                val p = pts.getJSONObject(i)
+                val known = p.optJSONObject("known")?.let { k ->
+                    Known(k.getDouble("n"), k.getDouble("e"), if (k.isNull("z")) null else k.getDouble("z"))
+                }
+                job.points.add(
+                    SurveyPoint(
+                        p.getInt("number"), p.optString("desc"), p.getInt("setup"),
+                        p.getDouble("x"), p.getDouble("y"), p.getDouble("z"), known,
+                        PointSource.valueOf(p.optString("source", "AR")),
+                    )
                 )
             }
             return job

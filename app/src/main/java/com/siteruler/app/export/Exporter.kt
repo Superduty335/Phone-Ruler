@@ -1,5 +1,6 @@
 package com.siteruler.app.export
 
+import com.siteruler.app.model.Coords
 import com.siteruler.app.model.Format
 import com.siteruler.app.model.Job
 import com.siteruler.app.model.LineKind
@@ -18,7 +19,52 @@ object Exporter {
         val dxf = File(dir, "$base.dxf").apply { writeText(dxf(job, units)) }
         val csv = File(dir, "$base.csv").apply { writeText(csv(job, units)) }
         val json = File(dir, "$base.json").apply { writeText(job.toJson().toString(2)) }
-        return listOf(dxf, csv, json)
+        val files = mutableListOf(dxf, csv, json)
+        if (job.points.isNotEmpty()) {
+            files.add(File(dir, "${base}_points.csv").apply { writeText(pnezd(job, units)) })
+            files.add(File(dir, "${base}_points.dxf").apply { writeText(pointsDxf(job, units)) })
+        }
+        return files
+    }
+
+    /**
+     * Point file in the common P,N,E,Z,D order (no header), in feet or meters per [units].
+     * Imports into SiteMath, Civil 3D, Carlson, TBC and most data collectors.
+     */
+    fun pnezd(job: Job, units: Units): String {
+        val f = if (units == Units.IMPERIAL) 1 / 0.3048 else 1.0
+        return Coords.compute(job.points, units).first.joinToString("") { g ->
+            val d = g.desc.replace(",", " ")
+            "%d,%.4f,%.4f,%.4f,%s\n".format(Locale.US, g.number, g.n * f, g.e * f, g.z * f, d)
+        }
+    }
+
+    /** Points as DXF POINT entities at their grid coordinates, with number and description labels. */
+    fun pointsDxf(job: Job, units: Units): String {
+        val f = if (units == Units.IMPERIAL) 1 / 0.3048 else 1.0
+        val textH = if (units == Units.IMPERIAL) 0.5 else 0.15
+        val sb = StringBuilder()
+        fun g(code: Int, value: Any) {
+            sb.append(code).append('\n').append(
+                if (value is Double) "%.4f".format(Locale.US, value) else value.toString()
+            ).append('\n')
+        }
+        g(0, "SECTION"); g(2, "HEADER")
+        g(9, "\$ACADVER"); g(1, "AC1009")
+        g(9, "\$INSUNITS"); g(70, if (units == Units.IMPERIAL) 2 else 6)
+        g(0, "ENDSEC")
+        g(0, "SECTION"); g(2, "ENTITIES")
+        for (p in Coords.compute(job.points, units).first) {
+            val x = p.e * f; val y = p.n * f; val z = p.z * f
+            g(0, "POINT"); g(8, "PNTS"); g(10, x); g(20, y); g(30, z)
+            g(0, "TEXT"); g(8, "PNT-NO"); g(10, x + textH * 0.6); g(20, y + textH * 0.3); g(30, z); g(40, textH); g(1, p.number)
+            if (p.desc.isNotEmpty()) {
+                g(0, "TEXT"); g(8, "PNT-DESC"); g(10, x + textH * 0.6); g(20, y - textH * 1.3); g(30, z); g(40, textH); g(1, p.desc)
+            }
+        }
+        g(0, "ENDSEC")
+        g(0, "EOF")
+        return sb.toString()
     }
 
     fun csv(job: Job, units: Units): String = buildString {
