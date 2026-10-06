@@ -1,0 +1,29 @@
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:colorAccent">#FFC107</item>
+    </style>
+
+    <style name="ModeTab">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">3dp</item>
+        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/btn_bg</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="ActionButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">3dp</item>
+        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/btn_bg</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+</resources>

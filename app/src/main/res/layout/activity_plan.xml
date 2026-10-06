@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/planTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#202020"
+        android:padding="12dp"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp" />
+
+    <com.phoneruler.measure.ui.PlanView
+        android:id="@+id/plan"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#202020"
+        android:orientation="horizontal"
+        android:padding="10dp">
+
+        <TextView android:id="@+id/rotateLeft" style="@style/ActionButton" android:text="⟲ 90°" />
+        <TextView android:id="@+id/rotateRight" style="@style/ActionButton" android:text="⟳ 90°" />
+        <TextView android:id="@+id/fit" style="@style/ActionButton" android:text="Fit" />
+        <TextView android:id="@+id/planExport" style="@style/ActionButton" android:text="Export" />
+    </LinearLayout>
+</LinearLayout>

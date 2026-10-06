@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <android.opengl.GLSurfaceView
+        android:id="@+id/surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <com.phoneruler.measure.ui.OverlayView
+        android:id="@+id/overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#99000000"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView android:id="@+id/modeDistance" style="@style/ModeTab" android:text="Distance" />
+            <TextView android:id="@+id/modeHeight" style="@style/ModeTab" android:text="Height" />
+            <TextView android:id="@+id/modeRoom" style="@style/ModeTab" android:text="Room" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/live"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFC107"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#99000000"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView android:id="@+id/undo" style="@style/ActionButton" android:text="Undo" />
+
+            <TextView
+                android:id="@+id/add"
+                android:layout_width="84dp"
+                android:layout_height="84dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/btn_add_bg"
+                android:gravity="center"
+                android:text="+"
+                android:textColor="#000000"
+                android:textSize="40sp"
+                android:textStyle="bold" />
+
+            <TextView android:id="@+id/finish" style="@style/ActionButton" android:text="Close room" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal">
+
+            <TextView android:id="@+id/units" style="@style/ActionButton" android:text="ft-in" />
+            <TextView android:id="@+id/plan" style="@style/ActionButton" android:text="Plan" />
+            <TextView android:id="@+id/job" style="@style/ActionButton" android:text="Job" />
+            <TextView android:id="@+id/export" style="@style/ActionButton" android:text="Export" />
+            <TextView android:id="@+id/clear" style="@style/ActionButton" android:text="Clear" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>
