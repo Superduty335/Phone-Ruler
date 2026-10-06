@@ -11,7 +11,7 @@ import com.siteruler.app.model.Units
 import com.siteruler.app.ui.RulerView
 
 /**
- * On-screen ruler for small objects. Turn the phone sideways for a longer ruler.
+ * On-screen ruler for small objects, on any edge; left and right give the longest ruler.
  * Calibrate once against a credit card, because phones don't always report their exact pixel density.
  */
 class RulerActivity : Activity() {
@@ -33,13 +33,13 @@ class RulerActivity : Activity() {
         val dm = resources.displayMetrics
         val reported = (dm.xdpi + dm.ydpi) / 2f / 25.4f
         ruler.pxPerMm = prefs.getFloat("rulerPxPerMm", reported)
-        ruler.edge = if (prefs.getString("rulerEdge", "TOP") == "BOTTOM") RulerView.Edge.BOTTOM else RulerView.Edge.TOP
+        ruler.edge = RulerView.Edge.entries.firstOrNull { it.name == prefs.getString("rulerEdge", "TOP") } ?: RulerView.Edge.TOP
 
         fun button(label: String, onClick: (TextView) -> Unit) = TextView(this).apply {
             text = label
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 13f
             setBackgroundResource(R.drawable.btn_bg)
             layoutParams = LinearLayout.LayoutParams(0, (48 * density).toInt(), 1f).apply {
                 marginStart = (3 * density).toInt(); marginEnd = (3 * density).toInt()
@@ -53,7 +53,8 @@ class RulerActivity : Activity() {
 
         normalRow = row().apply {
             addView(button(edgeLabel()) { b ->
-                ruler.edge = if (ruler.edge == RulerView.Edge.TOP) RulerView.Edge.BOTTOM else RulerView.Edge.TOP
+                val edges = RulerView.Edge.entries
+                ruler.edge = edges[(ruler.edge.ordinal + 1) % edges.size]
                 prefs.edit().putString("rulerEdge", ruler.edge.name).apply()
                 b.text = edgeLabel()
                 placeControls()
@@ -101,10 +102,13 @@ class RulerActivity : Activity() {
     /** Buttons go on the edge opposite the ruler, so they never cover it. */
     private fun placeControls() {
         val margin = (16 * resources.displayMetrics.density).toInt()
+        val side = (120 * resources.displayMetrics.density).toInt() // clear of a side ruler
         controls.layoutParams = FrameLayout.LayoutParams(-1, -2).apply {
-            gravity = if (ruler.edge == RulerView.Edge.TOP) Gravity.BOTTOM else Gravity.TOP
+            gravity = if (ruler.edge == RulerView.Edge.BOTTOM) Gravity.TOP else Gravity.BOTTOM
             topMargin = margin
             bottomMargin = margin
+            if (ruler.edge == RulerView.Edge.LEFT) leftMargin = side
+            if (ruler.edge == RulerView.Edge.RIGHT) rightMargin = side
         }
     }
 
@@ -116,7 +120,7 @@ class RulerActivity : Activity() {
             "Lay a credit card's short edge on the ruler with its end at the left red line. " +
                 "Tap − or + until the right red line meets the card's other end (53.98 mm, 2 1/8\")."
         } else {
-            "Hold the object against the ruler. Turn the phone sideways for a longer ruler."
+            "Hold the object against the ruler. Use Edge: left or right for a longer ruler."
         }
         if (on) ruler.setMarkersMm(0f, CARD_MM)
     }
@@ -126,7 +130,7 @@ class RulerActivity : Activity() {
         ruler.setMarkersMm(0f, CARD_MM)
     }
 
-    private fun edgeLabel() = if (ruler.edge == RulerView.Edge.TOP) "Ruler: top" else "Ruler: bottom"
+    private fun edgeLabel() = "Edge: " + ruler.edge.name.lowercase()
     private fun unitsLabel() = if (ruler.units == Units.IMPERIAL) "Inches" else "mm"
 
     private companion object {

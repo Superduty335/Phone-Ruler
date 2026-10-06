@@ -17,10 +17,15 @@ import kotlin.math.roundToInt
  */
 class RulerView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
 
-    enum class Edge { TOP, BOTTOM }
+    enum class Edge {
+        TOP, RIGHT, BOTTOM, LEFT;
+
+        /** Left and right run the ruler down the long side of the phone. */
+        val vertical: Boolean get() = this == LEFT || this == RIGHT
+    }
 
     var edge = Edge.TOP
-        set(value) { field = value; invalidate() }
+        set(value) { field = value; if (width > 0) resetMarkers() }
     var units = Units.IMPERIAL
         set(value) { field = value; invalidate() }
     /** Physical scale. Starts from the screen's reported density; calibration replaces it. */
@@ -57,26 +62,51 @@ class RulerView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         invalidate()
     }
 
+    private val length: Float get() = (if (edge.vertical) height else width).toFloat()
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        markerA = markerA.coerceIn(0f, w.toFloat())
-        markerB = if (markerB < 0) w * 0.6f else markerB.coerceIn(0f, w.toFloat())
+        resetMarkers()
+    }
+
+    fun resetMarkers() {
+        markerA = 0f
+        markerB = length * 0.6f
+        invalidate()
+    }
+
+    /** Ruler coordinates (u along the ruler from zero, v in from the edge) to screen. */
+    private fun sx(u: Float, v: Float) = when (edge) {
+        Edge.TOP, Edge.BOTTOM -> u
+        Edge.LEFT -> v
+        Edge.RIGHT -> width - v
+    }
+
+    private fun sy(u: Float, v: Float) = when (edge) {
+        Edge.TOP -> v
+        Edge.BOTTOM -> height - v
+        Edge.LEFT, Edge.RIGHT -> u
+    }
+
+    private fun line(canvas: Canvas, u0: Float, v0: Float, u1: Float, v1: Float, paint: Paint) =
+        canvas.drawLine(sx(u0, v0), sy(u0, v0), sx(u1, v1), sy(u1, v1), paint)
+
+    private fun band(canvas: Canvas, u0: Float, u1: Float, paint: Paint) {
+        val x0 = sx(u0, 0f); val y0 = sy(u0, 0f); val x1 = sx(u1, rulerHeight); val y1 = sy(u1, rulerHeight)
+        canvas.drawRect(minOf(x0, x1), minOf(y0, y1), maxOf(x0, x1), maxOf(y0, y1), paint)
     }
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(Color.WHITE)
-        val top = edge == Edge.TOP
-        val base = if (top) 0f else height.toFloat()
-        val dir = if (top) 1f else -1f
-        val bandTop = if (top) 0f else height - rulerHeight
-        canvas.drawRect(0f, bandTop, width.toFloat(), bandTop + rulerHeight, bandPaint)
+        val len = length
+        band(canvas, 0f, len, bandPaint)
 
         // Ticks: 1/16" or 1 mm.
         val stepMm = if (units == Units.IMPERIAL) 25.4f / 16 else 1f
         var i = 0
         while (true) {
-            val x = i * stepMm * pxPerMm
-            if (x > width) break
+            val u = i * stepMm * pxPerMm
+            if (u > len) break
             val (frac, label) = if (units == Units.IMPERIAL) {
                 when {
                     i % 16 == 0 -> 0.55f to (i / 16).toString()
@@ -92,26 +122,33 @@ class RulerView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
                     else -> 0.18f to null
                 }
             }
-            val len = rulerHeight * frac
-            canvas.drawLine(x, base, x, base + dir * len, tickPaint)
+            val tick = rulerHeight * frac
+            line(canvas, u, 0f, u, tick, tickPaint)
             if (label != null && i > 0) {
-                val y = base + dir * (len + numberPaint.textSize) + if (top) 0f else numberPaint.textSize * 0.7f
-                canvas.drawText(label, x, y, numberPaint)
+                val v = tick + numberPaint.textSize
+                canvas.drawText(label, sx(u, v), sy(u, v) + numberPaint.textSize / 3, numberPaint)
             }
             i++
         }
         val unitLabel = if (units == Units.IMPERIAL) "in" else "cm"
-        canvas.drawText(unitLabel, width - 20 * density, base + dir * rulerHeight * 0.8f + if (top) 0f else numberPaint.textSize, numberPaint)
+        val lu = len - 20 * density; val lv = rulerHeight * 0.8f
+        canvas.drawText(unitLabel, sx(lu, lv), sy(lu, lv) + numberPaint.textSize / 3, numberPaint)
 
         // Span between the markers, and the markers themselves.
-        val lo = minOf(markerA, markerB); val hi = maxOf(markerA, markerB)
-        canvas.drawRect(lo, bandTop, hi, bandTop + rulerHeight, spanPaint)
-        val reach = rulerHeight * 1.6f
-        for (m in listOf(markerA, markerB)) canvas.drawLine(m, base, m, base + dir * reach, markerPaint)
+        band(canvas, minOf(markerA, markerB), maxOf(markerA, markerB), spanPaint)
+        for (m in listOf(markerA, markerB)) line(canvas, m, 0f, m, rulerHeight * 1.5f, markerPaint)
 
-        val cy = height / 2f
-        canvas.drawText(reading(), width / 2f, cy, readingPaint)
-        canvas.drawText("Drag the red lines to the ends of the object", width / 2f, cy + 30 * density, hintPaint)
+        // Reading, kept clear of a side ruler.
+        val side = if (edge.vertical) rulerHeight * 1.6f else 0f
+        val cx = when (edge) {
+            Edge.LEFT -> side + (width - side) / 2f
+            Edge.RIGHT -> (width - side) / 2f
+            else -> width / 2f
+        }
+        val cy = if (edge.vertical) height * 0.4f else height / 2f
+        canvas.drawText(reading(), cx, cy, readingPaint)
+        canvas.drawText("Drag the red lines to the", cx, cy + 30 * density, hintPaint)
+        canvas.drawText("ends of the object", cx, cy + 50 * density, hintPaint)
     }
 
     private fun reading(): String {
@@ -130,7 +167,7 @@ class RulerView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        val x = e.x.coerceIn(0f, width.toFloat())
+        val x = (if (edge.vertical) e.y else e.x).coerceIn(0f, length)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragging = if (abs(x - markerA) <= abs(x - markerB)) 1 else 2
