@@ -113,8 +113,8 @@ class RulerActivity : Activity() {
         normalRow.visibility = if (on) LinearLayout.GONE else LinearLayout.VISIBLE
         calibrateRow.visibility = if (on) LinearLayout.VISIBLE else LinearLayout.GONE
         hint.text = if (on) {
-            "Lay a credit card's long edge on the ruler with its end at the left red line. " +
-                "Tap − or + until the right red line meets the card's other end (85.6 mm, 3 3/8\")."
+            "Lay a credit card's short edge on the ruler with its end at the left red line. " +
+                "Tap − or + until the right red line meets the card's other end (53.98 mm, 2 1/8\")."
         } else {
             "Hold the object against the ruler. Turn the phone sideways for a longer ruler."
         }
@@ -130,6 +130,6 @@ class RulerActivity : Activity() {
     private fun unitsLabel() = if (ruler.units == Units.IMPERIAL) "Inches" else "mm"
 
     private companion object {
-        const val CARD_MM = 85.6f // ISO/IEC 7810 ID-1 card width
+        const val CARD_MM = 53.98f // short side of an ISO/IEC 7810 ID-1 card; fits a portrait screen
     }
 }
