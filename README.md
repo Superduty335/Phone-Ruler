@@ -38,7 +38,7 @@ Requirements: Android Studio (Ladybug or newer) or JDK 17 plus the Android SDK (
 
 1. Open this folder in Android Studio, let Gradle sync, and press Run with the phone plugged in (USB debugging on).
 2. Or from a terminal: `./gradlew assembleDebug`, then install `app/build/outputs/apk/debug/app-debug.apk`.
-3. If the project is pushed to GitHub, the included workflow (`.github/workflows/build.yml`) builds the APK on every push; download it from the run's **Artifacts** section and sideload it.
+3. Every push to `main` builds the APK on GitHub and publishes it as the **Latest build** release. On the phone, download https://github.com/Superduty335/Phone-Ruler/releases/latest/download/PhoneRuler.apk, open it, and allow installing from your browser when asked.
 
 The phone will prompt to install or update "Google Play Services for AR" the first time if it isn't already present.
 
