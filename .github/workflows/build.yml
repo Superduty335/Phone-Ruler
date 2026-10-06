@@ -21,19 +21,19 @@ jobs:
       - run: ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: phone-ruler-debug-apk
+          name: siteruler-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
       # Every build of main replaces the "latest" release, so the newest APK is always at
-      # https://github.com/<owner>/<repo>/releases/latest/download/PhoneRuler.apk
+      # https://github.com/<owner>/<repo>/releases/latest/download/SiteRuler.apk
       - name: Publish latest APK
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk PhoneRuler.apk
+          cp app/build/outputs/apk/debug/app-debug.apk SiteRuler.apk
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest PhoneRuler.apk \
+          gh release create latest SiteRuler.apk \
             --title "Latest build" \
-            --notes "Debug build of ${GITHUB_SHA::7}. Download PhoneRuler.apk on your phone and open it to install." \
+            --notes "Debug build of ${GITHUB_SHA::7}. Download SiteRuler.apk on your phone and open it to install." \
             --target "$GITHUB_SHA" --latest

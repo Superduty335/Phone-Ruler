@@ -1,4 +1,4 @@
-package com.phoneruler.measure.ui
+package com.siteruler.app.ui
 
 import android.content.Context
 import android.graphics.Canvas

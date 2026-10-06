@@ -1,4 +1,4 @@
-package com.phoneruler.measure.model
+package com.siteruler.app.model
 
 import org.json.JSONArray
 import org.json.JSONObject

@@ -1,4 +1,4 @@
-package com.phoneruler.measure.render
+package com.siteruler.app.render
 
 import android.opengl.GLES11Ext
 import android.opengl.GLES20

@@ -1,13 +1,13 @@
-package com.phoneruler.measure
+package com.siteruler.app
 
 import android.app.Activity
 import android.os.Bundle
 import android.widget.TextView
-import com.phoneruler.measure.export.Share
-import com.phoneruler.measure.model.Format
-import com.phoneruler.measure.model.Job
-import com.phoneruler.measure.model.Units
-import com.phoneruler.measure.ui.PlanView
+import com.siteruler.app.export.Share
+import com.siteruler.app.model.Format
+import com.siteruler.app.model.Job
+import com.siteruler.app.model.Units
+import com.siteruler.app.ui.PlanView
 import java.io.File
 
 /** The floor plan sketch: arrange measured rooms into a plan and export it. */

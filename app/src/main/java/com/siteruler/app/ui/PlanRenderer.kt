@@ -1,14 +1,14 @@
-package com.phoneruler.measure.ui
+package com.siteruler.app.ui
 
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import com.phoneruler.measure.model.Format
-import com.phoneruler.measure.model.Job
-import com.phoneruler.measure.model.Units
-import com.phoneruler.measure.model.Vec2
+import com.siteruler.app.model.Format
+import com.siteruler.app.model.Job
+import com.siteruler.app.model.Units
+import com.siteruler.app.model.Vec2
 import kotlin.math.atan2
 import kotlin.math.hypot
 

@@ -1,4 +1,4 @@
-package com.phoneruler.measure.model
+package com.siteruler.app.model
 
 import kotlin.math.abs
 import kotlin.math.roundToInt

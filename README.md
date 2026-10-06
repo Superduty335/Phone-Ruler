@@ -1,6 +1,6 @@
-# Phone Ruler
+# SiteRuler
 
-An Android app for measuring houses with the phone's camera and motion sensors (ARCore), built for as-built drawings. It collects room outlines, ceiling heights and point-to-point distances, sketches the rooms into a floor plan you arrange on screen, and exports the plan as DXF (AutoCAD, BricsCAD, DraftSight, SketchUp and similar) and PDF.
+A tradesman's measuring app for Android that uses the phone's camera and motion sensors (ARCore). It's built for surveyors, engineers, architects, landscapers and builders doing as-builts and site measurements. It collects room outlines, ceiling heights and point-to-point distances, sketches the rooms into a floor plan you arrange on screen, and exports the plan as DXF (AutoCAD, BricsCAD, DraftSight, SketchUp and similar) and PDF.
 
 ## What it does
 
@@ -38,7 +38,7 @@ Requirements: Android Studio (Ladybug or newer) or JDK 17 plus the Android SDK (
 
 1. Open this folder in Android Studio, let Gradle sync, and press Run with the phone plugged in (USB debugging on).
 2. Or from a terminal: `./gradlew assembleDebug`, then install `app/build/outputs/apk/debug/app-debug.apk`.
-3. Every push to `main` builds the APK on GitHub and publishes it as the **Latest build** release. On the phone, download https://github.com/Superduty335/Phone-Ruler/releases/latest/download/PhoneRuler.apk, open it, and allow installing from your browser when asked.
+3. Every push to `main` builds the APK on GitHub and publishes it as the **Latest build** release. On the phone, download https://github.com/Superduty335/Phone-Ruler/releases/latest/download/SiteRuler.apk, open it, and allow installing from your browser when asked.
 
 The phone will prompt to install or update "Google Play Services for AR" the first time if it isn't already present.
 

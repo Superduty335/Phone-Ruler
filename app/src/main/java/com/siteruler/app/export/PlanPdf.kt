@@ -1,12 +1,12 @@
-package com.phoneruler.measure.export
+package com.siteruler.app.export
 
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
-import com.phoneruler.measure.model.Format
-import com.phoneruler.measure.model.Job
-import com.phoneruler.measure.model.Units
-import com.phoneruler.measure.ui.PlanRenderer
+import com.siteruler.app.model.Format
+import com.siteruler.app.model.Job
+import com.siteruler.app.model.Units
+import com.siteruler.app.ui.PlanRenderer
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
@@ -29,7 +29,7 @@ object PlanPdf {
         val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 9f; color = Color.DKGRAY }
         canvas.drawText(job.name, MARGIN, MARGIN, title)
         canvas.drawText(
-            "As-built sketch · measured with Phone Ruler · " + DateFormat.getDateInstance().format(Date()),
+            "As-built sketch · measured with SiteRuler · " + DateFormat.getDateInstance().format(Date()),
             MARGIN, MARGIN + 14f, small,
         )
 

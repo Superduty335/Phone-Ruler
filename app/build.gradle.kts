@@ -4,15 +4,27 @@ plugins {
 }
 
 android {
-    namespace = "com.phoneruler.measure"
+    namespace = "com.siteruler.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.phoneruler.measure"
+        applicationId = "com.siteruler.app"
         minSdk = 24 // ARCore minimum
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+    }
+
+    // A fixed debug key, so each new build installs as an update over the last one
+    // instead of failing with "App not installed". It is only a debug key; use a
+    // private release key before publishing to the Play Store.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("siteruler-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "PhoneRuler"
+rootProject.name = "SiteRuler"
 include(":app")
