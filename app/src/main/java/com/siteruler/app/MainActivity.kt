@@ -136,6 +136,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         }
         findViewById<TextView>(R.id.job).setOnClickListener { showJob() }
         findViewById<TextView>(R.id.export).setOnClickListener { Share.export(this, job, units) }
+        findViewById<TextView>(R.id.ruler).setOnClickListener {
+            startActivity(Intent(this, RulerActivity::class.java))
+        }
         findViewById<TextView>(R.id.plan).setOnClickListener {
             startActivity(Intent(this, PlanActivity::class.java))
         }

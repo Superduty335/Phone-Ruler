@@ -32,6 +32,12 @@
             android:label="Floor plan"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".RulerActivity"
+            android:exported="false"
+            android:label="Ruler"
+            android:screenOrientation="fullUser" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
