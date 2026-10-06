@@ -33,6 +33,13 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".VolumeActivity"
+            android:exported="false"
+            android:label="Volumes"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".RulerActivity"
             android:exported="false"
             android:label="Ruler"

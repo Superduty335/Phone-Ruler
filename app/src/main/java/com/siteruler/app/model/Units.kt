@@ -28,5 +28,11 @@ object Format {
         Units.IMPERIAL -> String.format("%.1f sq ft", squareMeters * SQFT_PER_SQM)
     }
 
+    /** Elevations in decimal feet (101.25 ft) or meters (30.862 m), the way surveyors write them. */
+    fun elevation(meters: Double, units: Units): String = when (units) {
+        Units.METRIC -> String.format("%.3f m", meters)
+        Units.IMPERIAL -> String.format("%.2f ft", meters / 0.3048)
+    }
+
     fun inches(meters: Double): Double = meters / M_PER_IN
 }

@@ -62,6 +62,11 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
     private lateinit var finishButton: TextView
     private lateinit var unitsButton: TextView
     private lateinit var modeTabs: Map<MeasureController.Mode, TextView>
+    private lateinit var tradeButton: TextView
+    private var trade = Trade.ARCHITECTURE
+    private var uiMode = MeasureController.Mode.DISTANCE
+    /** Description given to Topo shots. */
+    private var topoCode = "GND"
     private lateinit var rotationHelper: DisplayRotationHelper
 
     private var session: Session? = null
@@ -101,7 +106,9 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
             MeasureController.Mode.HEIGHT to findViewById(R.id.modeHeight),
             MeasureController.Mode.ROOM to findViewById(R.id.modeRoom),
             MeasureController.Mode.POINTS to findViewById(R.id.modePoints),
+            MeasureController.Mode.TOPO to findViewById(R.id.modeTopo),
         )
+        tradeButton = findViewById(R.id.trade)
         rotationHelper = DisplayRotationHelper(this)
 
         jobFile = File(filesDir, PlanActivity.JOB_FILE)
@@ -118,12 +125,13 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         surface.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
         modeTabs.forEach { (mode, tab) ->
-            tab.setOnClickListener {
-                selectTab(mode)
-                pending.add { controller.setMode(mode) }
-            }
+            tab.setOnClickListener { selectMode(mode) }
         }
-        selectTab(MeasureController.Mode.DISTANCE)
+        topoCode = prefs.getString("topoCode", null) ?: topoCode
+        val saved = Trade.load(this)
+        applyTrade(saved ?: Trade.ARCHITECTURE)
+        if (saved == null) surface.post { pickTrade() }
+        tradeButton.setOnClickListener { pickTrade() }
 
         findViewById<TextView>(R.id.add).setOnClickListener {
             pending.add { frame ->
@@ -136,7 +144,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
             pending.add { controller.undo()?.let(::toast) }
         }
         finishButton.setOnClickListener {
-            pending.add { controller.closeOrSkip()?.let(::toast) }
+            if (uiMode == MeasureController.Mode.TOPO) pickTopoCode()
+            else pending.add { controller.closeOrSkip()?.let(::toast) }
         }
         findViewById<TextView>(R.id.clear).setOnClickListener {
             pending.add { controller.clear() }
@@ -145,6 +154,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
             units = if (units == Units.IMPERIAL) Units.METRIC else Units.IMPERIAL
             unitsButton.text = unitsLabel()
             prefs.edit().putString("units", units.name).apply()
+            updateElevOffset() // assumed elevations are 100 ft or 100 m
         }
         findViewById<TextView>(R.id.job).setOnClickListener { showJob() }
         findViewById<TextView>(R.id.export).setOnClickListener { Share.export(this, job, units) }
@@ -154,11 +164,15 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         findViewById<TextView>(R.id.plan).setOnClickListener {
             startActivity(Intent(this, PlanActivity::class.java))
         }
+        findViewById<TextView>(R.id.volumes).setOnClickListener {
+            startActivity(Intent(this, VolumeActivity::class.java))
+        }
     }
 
     override fun onResume() {
         super.onResume()
         job = loadJob() // the plan screen may have moved rooms
+        updateElevOffset()
         if (session == null) {
             try {
                 if (ArCoreApk.getInstance().requestInstall(this, !installRequested) ==
@@ -175,6 +189,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
                 // Each AR session has its own coordinate frame, so its points form a new setup.
                 job.newSetup()
                 saveJob()
+                updateElevOffset()
             } catch (e: UnavailableException) {
                 statusText.text = "ARCore isn't available on this phone: ${e.javaClass.simpleName}"
                 return
@@ -297,7 +312,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         runOnUiThread {
             statusText.text = prompt
             liveText.text = snap.live ?: ""
-            finishButton.text = snap.finishLabel
+            finishButton.text = if (uiMode == MeasureController.Mode.TOPO) "Code: $topoCode" else snap.finishLabel
             overlay.update(snap.labels, aim)
         }
     }
@@ -355,7 +370,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
 
     override fun onRoomMeasured(corners: List<Vec2>, heightMeters: Double?) {
         runOnUiThread {
-            val default = "Room ${job.rooms.size + 1}"
+            val default = "${trade.roomLabel} ${job.rooms.size + 1}"
             val draft = RoomRecord(default, corners, heightMeters)
             val summary = buildString {
                 append("${corners.size} walls, ${Format.area(draft.area, units)}")
@@ -372,7 +387,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
                 saveJob()
             }
             AlertDialog.Builder(this)
-                .setTitle("Name this room")
+                .setTitle("Name this ${trade.roomLabel.lowercase()}")
                 .setMessage(summary)
                 .setView(input)
                 .setPositiveButton("Save") { _, _ -> save() }
@@ -381,8 +396,26 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         }
     }
 
-    override fun onPointShot(liveId: Int, x: Double, y: Double, z: Double) {
-        runOnUiThread { showPointDialog(liveId, x, y, z) }
+    override fun onPointShot(liveId: Int, x: Double, y: Double, z: Double, quick: Boolean) {
+        runOnUiThread {
+            if (!quick) {
+                showPointDialog(liveId, x, y, z)
+                return@runOnUiThread
+            }
+            val number = job.nextPointNumber
+            job.points.add(SurveyPoint(number, topoCode, job.setup, x, y, z))
+            saveJob()
+            pending.add { controller.assignPoint(liveId, number, number.toString()) }
+        }
+    }
+
+    override fun onPointUndone(number: Int) {
+        runOnUiThread {
+            if (job.points.removeAll { it.number == number && it.setup == job.setup }) {
+                saveJob()
+                toast("Point $number removed")
+            }
+        }
     }
 
     override fun onPointsRefined(positions: Map<Int, DoubleArray>) {
@@ -397,6 +430,84 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
             }
             if (changed) saveJob()
         }
+    }
+
+    /** Lets the live readout show grid elevations once this setup has a point. */
+    private fun updateElevOffset() {
+        val grid = Coords.compute(job.points, units).first
+        val p = job.points.firstOrNull { it.setup == job.setup }
+        controller.elevOffset = p?.let { sp -> grid.firstOrNull { it.number == sp.number }?.let { it.z - sp.y } }
+    }
+
+    // ---- Trades ----
+
+    private fun pickTrade() {
+        val trades = Trade.entries
+        AlertDialog.Builder(this)
+            .setTitle("What kind of work?")
+            .setItems(trades.map { it.label + "\n" + tradeBlurb(it) }.toTypedArray()) { _, i ->
+                Trade.save(this, trades[i])
+                applyTrade(trades[i])
+            }
+            .show()
+    }
+
+    private fun tradeBlurb(t: Trade) = when (t) {
+        Trade.ARCHITECTURE -> "Rooms, ceiling heights and floor plans"
+        Trade.SURVEYING -> "Control, points and topo for volumes"
+        Trade.ENGINEERING -> "Points, existing and finished grade, cut and fill"
+        Trade.LANDSCAPING -> "Bed and lawn areas, grades and soil volumes"
+    }
+
+    private fun applyTrade(t: Trade) {
+        trade = t
+        tradeButton.text = "SiteRuler · ${t.label}  ▾"
+        modeTabs.forEach { (mode, tab) -> tab.visibility = if (mode in t.modes) View.VISIBLE else View.GONE }
+        modeTabs[MeasureController.Mode.ROOM]?.text = t.roomLabel
+        findViewById<TextView>(R.id.plan).visibility = if (t.showPlan) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.volumes).visibility = if (t.showVolumes) View.VISIBLE else View.GONE
+        pending.add { controller.askCeiling = t.askCeiling }
+        if (uiMode !in t.modes) selectMode(t.modes.first())
+        else selectTab(uiMode)
+    }
+
+    private fun selectMode(mode: MeasureController.Mode) {
+        uiMode = mode
+        selectTab(mode)
+        pending.add { controller.setMode(mode) }
+        if (mode == MeasureController.Mode.TOPO) finishButton.text = "Code: $topoCode"
+    }
+
+    private fun pickTopoCode() {
+        val used = job.points.map { it.desc }.filter { it.isNotBlank() }
+        val codes = (trade.codes + used).distinct()
+        val options = codes + "Other..."
+        AlertDialog.Builder(this)
+            .setTitle("Code for the next topo shots")
+            .setItems(options.toTypedArray()) { _, i ->
+                if (i < codes.size) setTopoCode(codes[i])
+                else {
+                    val input = EditText(this).apply {
+                        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                        hint = "e.g. EG, FG, TOP, TOE"
+                    }
+                    AlertDialog.Builder(this)
+                        .setTitle("Topo code")
+                        .setView(input)
+                        .setPositiveButton("Use") { _, _ ->
+                            input.text.toString().trim().takeIf { it.isNotEmpty() }?.let(::setTopoCode)
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+            .show()
+    }
+
+    private fun setTopoCode(code: String) {
+        topoCode = code.replace(",", " ")
+        finishButton.text = "Code: $topoCode"
+        getSharedPreferences("settings", MODE_PRIVATE).edit().putString("topoCode", topoCode).apply()
     }
 
     // ---- Points ----
@@ -585,6 +696,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
     private fun saveJob() {
         try {
             job.save(jobFile)
+            updateElevOffset()
         } catch (e: Exception) {
             toast("Couldn't save: ${e.message}")
         }

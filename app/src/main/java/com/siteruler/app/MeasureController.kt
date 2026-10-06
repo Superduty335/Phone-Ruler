@@ -27,13 +27,18 @@ class MeasureController(private val listener: Listener) {
     interface Listener {
         fun onLineMeasured(kind: LineKind, meters: Double)
         fun onRoomMeasured(corners: List<Vec2>, heightMeters: Double?)
-        /** A survey point was shot; the UI names it and then calls [assignPoint] or [dropPoint]. */
-        fun onPointShot(liveId: Int, x: Double, y: Double, z: Double)
+        /**
+         * A survey point was shot; the UI names it and then calls [assignPoint] or [dropPoint].
+         * [quick] is a Topo shot, saved straight away with the current code.
+         */
+        fun onPointShot(liveId: Int, x: Double, y: Double, z: Double, quick: Boolean)
+        /** The last shot point was undone. */
+        fun onPointUndone(number: Int)
         /** Current positions of this session's numbered points, after ARCore refines its map. */
         fun onPointsRefined(positions: Map<Int, DoubleArray>)
     }
 
-    enum class Mode { DISTANCE, HEIGHT, ROOM, POINTS }
+    enum class Mode { DISTANCE, HEIGHT, ROOM, POINTS, TOPO }
 
     data class Snapshot(
         val labels: List<OverlayView.Label>,
@@ -48,6 +53,11 @@ class MeasureController(private val listener: Listener) {
 
     var mode = Mode.DISTANCE
         private set
+
+    /** Ask for a ceiling height after a room outline (off for landscaping areas). */
+    @Volatile var askCeiling = true
+    /** Grid elevation minus AR height for this setup, once it has a point; meters. */
+    @Volatile var elevOffset: Double? = null
 
     private val active = mutableListOf<Anchor>()
     private val lines = mutableListOf<LiveLine>()
@@ -71,11 +81,11 @@ class MeasureController(private val listener: Listener) {
             finishRoom(room)
             return
         }
-        if (mode == Mode.POINTS) {
+        if (mode == Mode.POINTS || mode == Mode.TOPO) {
             val p = LivePoint(nextLiveId++, hit.createAnchor())
             points.add(p)
             val pos = p.anchor.pos()
-            listener.onPointShot(p.id, pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble())
+            listener.onPointShot(p.id, pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble(), mode == Mode.TOPO)
             return
         }
         active.add(hit.createAnchor())
@@ -93,8 +103,9 @@ class MeasureController(private val listener: Listener) {
         pendingRoom?.let { finishRoom(it); return null }
         if (mode != Mode.ROOM) return "Switch to Room mode to outline a room"
         if (active.size < 3) return "A room needs at least 3 corners"
-        pendingRoom = LiveRoom(active.toList())
+        val room = LiveRoom(active.toList())
         active.clear()
+        if (askCeiling) pendingRoom = room else finishRoom(room)
         return null
     }
 
@@ -102,6 +113,13 @@ class MeasureController(private val listener: Listener) {
         pendingRoom?.let {
             active.addAll(it.corners)
             pendingRoom = null
+            return null
+        }
+        if (mode == Mode.POINTS || mode == Mode.TOPO) {
+            val shot = points.lastOrNull { it.number > 0 } ?: return "Nothing to undo here. Delete points from Job."
+            shot.anchor.detach()
+            points.remove(shot)
+            listener.onPointUndone(shot.number)
             return null
         }
         val last = active.removeLastOrNull() ?: return "Nothing to undo here. Delete saved items from Job."
@@ -225,7 +243,7 @@ class MeasureController(private val listener: Listener) {
                 val (from, to, meters) = when (mode) {
                     Mode.DISTANCE -> Triple(last, aim, measure(last, aim, LineKind.DISTANCE))
                     Mode.HEIGHT -> Triple(last, floatArrayOf(last[0], aim[1], last[2]), measure(last, aim, LineKind.HEIGHT))
-                    Mode.ROOM, Mode.POINTS -> {
+                    Mode.ROOM, Mode.POINTS, Mode.TOPO -> {
                         val y = activePts[0][1]
                         val a = floatArrayOf(last[0], y, last[2])
                         val b = floatArrayOf(aim[0], y, aim[2])
@@ -234,13 +252,17 @@ class MeasureController(private val listener: Listener) {
                 }
                 renderer.draw(GLES20.GL_LINES, from + to, viewProj, PREVIEW_COLOR, 4f)
                 live = Format.length(meters, units)
-            } else if (mode == Mode.POINTS) {
+            } else if (mode == Mode.POINTS || mode == Mode.TOPO) {
                 val last = shot.lastOrNull { it.number > 0 }
+                val elev = elevOffset?.let { "Elev " + Format.elevation(aim[1] + it, units) }
                 if (last != null) {
                     val p = last.anchor.pos()
                     renderer.draw(GLES20.GL_LINES, p + aim, viewProj, PREVIEW_COLOR, 4f)
-                    live = "From ${last.label}: " + Format.length(horizontal(p, aim), units) +
+                    val fromLast = "From ${last.label}: " + Format.length(horizontal(p, aim), units) +
                         "  ΔZ " + Format.length((aim[1] - p[1]).toDouble(), units)
+                    live = if (elev != null) "$elev\n$fromLast" else fromLast
+                } else {
+                    live = elev
                 }
             }
         }
@@ -255,6 +277,8 @@ class MeasureController(private val listener: Listener) {
             Mode.DISTANCE -> if (n == 0) "Aim at the start point and tap +." else "Aim at the end point and tap +."
             Mode.HEIGHT -> if (n == 0) "Aim at the floor and tap +." else "Aim at the top point and tap +. Only the vertical part counts."
             Mode.POINTS -> "Aim at the point and tap +. Shoot at least 2 known points as control to get real coordinates."
+            Mode.TOPO -> "Topo: aim at the ground and tap + at every high spot, low spot and change in slope. " +
+                "Each shot saves at once. Walk the edge of the area too."
             Mode.ROOM -> when {
                 n == 0 -> "Aim at the floor in a corner and tap +. Work your way around the room."
                 n < 3 -> "Aim at the next corner and tap +. ($n so far)"

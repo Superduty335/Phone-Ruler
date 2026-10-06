@@ -24,14 +24,19 @@ object Share {
             PlanPdf.write(job, units, pdf)
             files.add(0, pdf)
         }
+        send(activity, files, "${job.name} measurements", "Send plan (PDF, DXF, CSV)")
+    }
+
+    /** Shares files written under the cache's exports folder. */
+    fun send(activity: Activity, files: List<File>, subject: String, chooserTitle: String) {
         val authority = activity.packageName + ".fileprovider"
         val uris = ArrayList<Uri>(files.map { FileProvider.getUriForFile(activity, authority, it) })
         val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
             type = "*/*"
-            putExtra(Intent.EXTRA_SUBJECT, "${job.name} measurements")
+            putExtra(Intent.EXTRA_SUBJECT, subject)
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        activity.startActivity(Intent.createChooser(send, "Send plan (PDF, DXF, CSV)"))
+        activity.startActivity(Intent.createChooser(send, chooserTitle))
     }
 }

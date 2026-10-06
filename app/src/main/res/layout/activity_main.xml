@@ -22,6 +22,18 @@
         android:orientation="vertical"
         android:padding="12dp">
 
+        <TextView
+            android:id="@+id/trade"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:paddingEnd="12dp"
+            android:textColor="#FFC107"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -31,6 +43,7 @@
             <TextView android:id="@+id/modeHeight" style="@style/ModeTab" android:text="Height" />
             <TextView android:id="@+id/modeRoom" style="@style/ModeTab" android:text="Room" />
             <TextView android:id="@+id/modePoints" style="@style/ModeTab" android:text="Points" />
+            <TextView android:id="@+id/modeTopo" style="@style/ModeTab" android:text="Topo" />
             <TextView android:id="@+id/ruler" style="@style/ModeTab" android:text="Ruler" />
         </LinearLayout>
 
@@ -91,6 +104,7 @@
 
             <TextView android:id="@+id/units" style="@style/ActionButton" android:text="ft-in" />
             <TextView android:id="@+id/plan" style="@style/ActionButton" android:text="Plan" />
+            <TextView android:id="@+id/volumes" style="@style/ActionButton" android:text="Volume" />
             <TextView android:id="@+id/job" style="@style/ActionButton" android:text="Job" />
             <TextView android:id="@+id/export" style="@style/ActionButton" android:text="Export" />
             <TextView android:id="@+id/clear" style="@style/ActionButton" android:text="Clear" />

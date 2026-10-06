@@ -4,6 +4,7 @@ import com.siteruler.app.model.Coords
 import com.siteruler.app.model.Format
 import com.siteruler.app.model.Job
 import com.siteruler.app.model.LineKind
+import com.siteruler.app.model.Tin
 import com.siteruler.app.model.Units
 import java.io.File
 import java.util.Locale
@@ -62,6 +63,34 @@ object Exporter {
                 g(0, "TEXT"); g(8, "PNT-DESC"); g(10, x + textH * 0.6); g(20, y - textH * 1.3); g(30, z); g(40, textH); g(1, p.desc)
             }
         }
+        g(0, "ENDSEC")
+        g(0, "EOF")
+        return sb.toString()
+    }
+
+    /** The ground surface as 3DFACE triangles at true elevation, plus its points; opens in any CAD as a TIN. */
+    fun tinDxf(tin: Tin, units: Units): String {
+        val f = if (units == Units.IMPERIAL) 1 / 0.3048 else 1.0
+        val sb = StringBuilder()
+        fun g(code: Int, value: Any) {
+            sb.append(code).append('\n').append(
+                if (value is Double) "%.4f".format(Locale.US, value) else value.toString()
+            ).append('\n')
+        }
+        g(0, "SECTION"); g(2, "HEADER")
+        g(9, "\$ACADVER"); g(1, "AC1009")
+        g(9, "\$INSUNITS"); g(70, if (units == Units.IMPERIAL) 2 else 6)
+        g(0, "ENDSEC")
+        g(0, "SECTION"); g(2, "ENTITIES")
+        for (t in tin.tris) {
+            g(0, "3DFACE"); g(8, "TIN")
+            val corners = listOf(t[0], t[1], t[2], t[2]) // a triangle repeats its last corner
+            corners.forEachIndexed { k, i ->
+                val p = tin.pts[i]
+                g(10 + k, p.x * f); g(20 + k, p.y * f); g(30 + k, p.z * f)
+            }
+        }
+        for (p in tin.pts) { g(0, "POINT"); g(8, "TIN-PNTS"); g(10, p.x * f); g(20, p.y * f); g(30, p.z * f) }
         g(0, "ENDSEC")
         g(0, "EOF")
         return sb.toString()

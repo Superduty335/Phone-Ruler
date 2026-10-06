@@ -4,10 +4,25 @@ A tradesman's measuring app for Android that uses the phone's camera and motion 
 
 ## What it does
 
+Tap the trade name at the top (**SiteRuler · Surveying ▾**) to pick the kind of work; the app asks the first time. Each trade shows the tools it uses:
+
+| Trade | Tools |
+|---|---|
+| Architecture | Distance, Height, Room, Points, Plan |
+| Surveying | Distance, Height, Points, Topo, Volume |
+| Engineering | Distance, Height, Points, Topo, Volume (EG/FG codes) |
+| Landscaping | Distance, Area (Room without a ceiling step), Points, Topo, Plan, Volume |
+
 - **Distance**: aim the crosshair at a start point, tap **+**, aim at the end point, tap **+**. Gives the straight-line 3D distance (door widths, window sizes, wall runs).
 - **Height**: tap **+** on the floor, then at the top point. Only the vertical part counts, so the top point doesn't need to be directly above.
 - **Room**: tap **+** on the floor at each corner, going around the room, then **Close room**. Wall lengths are measured flat on the floor, and the app shows each wall, the perimeter and the floor area. It then asks for the ceiling: aim where a wall meets the ceiling and tap **+**, or **Skip height**. Name the room and it is saved to the job.
 - **Points**: shoot survey points. Each one gets a number and a description (BM, IP, TC...). Mark a shot as a **control point** and enter its known North, East and (optionally) elevation, from a benchmark, property pins or a plat. With two or more control points in the same setup, every point in that setup is rotated and shifted onto that grid (best fit, no scale), and the fit shows the worst control residual so you can judge it. With one control point the shift is applied but the bearing is arbitrary. With none, points get assumed coordinates (first point N 5000, E 5000, Z 100). Each AR session is a new setup; to carry coordinates into a new setup, shoot two earlier points again and use "Use the coordinates of an earlier point". **Job → Points** lists everything, and **Copy for SiteMath** puts the points on the clipboard as P,N,E,Z,D. Export adds `_points.csv` (PNEZD, no header) and `_points.dxf` (POINTs with number and description labels). Coordinates are in feet or meters, following the units setting. Points carry a source field so a Bluetooth RTK receiver can be added later.
+- **Topo** (surveying, engineering, landscaping): fast elevation shots for volumes. Aim at the ground and tap **+** at every high spot, low spot and change in slope, and around the edge of the area; each shot saves at once with the next point number and the current code. Tap **Code** to switch codes (GND, TOP, TOE, EG, FG...). Once the setup has a point, the live readout shows the elevation under the crosshair. **Undo** removes the last shot.
+- **Volume**: earthwork volumes from the shots. The ground is a TIN (Delaunay triangles through the chosen points) and is measured against one of:
+  - **Grade**: a flat design elevation you type in. Gives cut, fill and net.
+  - **Stockpile**: the plane through the surface's own edge points, for a pile (volume above) or a pit (volume below).
+  - **Surface**: a second set of points by code, for example existing ground (EG) against finished grade (FG).
+  The plan view shades cut red and fill blue. Volumes are in cubic yards (and cubic feet) or cubic meters. **Share** sends a text report, `_surface.dxf` (3DFACE triangles on layer `TIN` at true elevation) and the PNEZD point file.
 - **Ruler**: a true-scale ruler along any edge of the screen (top, right, bottom or left), in inches (1/16") or millimeters, for small objects. Drag the two red lines to the ends of the object to read its length. Left and right run down the long side for the longest ruler. Calibrate it once with a credit card, because phones don't always report their exact screen density.
 - **Plan**: the floor plan sketch. Every measured room appears with its wall lengths, name, area and ceiling height. Drag a room to move it (corners snap onto nearby corners of other rooms), rotate the selected room 90° either way, drag empty space to pan, and pinch to zoom. The arrangement is saved and is what gets exported.
 - **Job**: the list of everything measured. Tap an item to delete it, rename the job (use the address), or start a new one. The job is saved on the phone and survives closing the app.
