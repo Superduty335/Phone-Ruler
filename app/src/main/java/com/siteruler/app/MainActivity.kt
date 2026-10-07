@@ -17,6 +17,8 @@ import android.view.View
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -27,6 +29,7 @@ import com.google.ar.core.Frame
 import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
 import com.google.ar.core.Point
+import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingFailureReason
 import com.google.ar.core.TrackingState
@@ -40,6 +43,7 @@ import com.siteruler.app.model.Job
 import com.siteruler.app.model.Known
 import com.siteruler.app.model.LineKind
 import com.siteruler.app.model.LineRecord
+import com.siteruler.app.model.Pivot
 import com.siteruler.app.model.RoomRecord
 import com.siteruler.app.model.SurveyPoint
 import com.siteruler.app.model.Units
@@ -64,9 +68,19 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
     private lateinit var modeTabs: Map<MeasureController.Mode, TextView>
     private lateinit var tradeButton: TextView
     private var trade = Trade.ARCHITECTURE
-    private var uiMode = MeasureController.Mode.DISTANCE
+    @Volatile private var uiMode = MeasureController.Mode.DISTANCE
     /** Description given to Topo shots. */
     private var topoCode = "GND"
+
+    // Pole: the phone clamped to a staff, shooting the tip instead of the crosshair.
+    private lateinit var poleButton: TextView
+    /** Tip position in the phone's frame (X right, Y up the screen, -Z out the back camera), meters; null = off. */
+    @Volatile private var poleTip: FloatArray? = null
+    /** Recent tip positions, averaged when a shot is taken (GL thread). */
+    private val tipHistory = ArrayDeque<FloatArray>()
+    /** Phone poses collected while calibrating (GL thread). */
+    private var calibration: MutableList<FloatArray>? = null
+    @Volatile private var calibrating = false
     private lateinit var rotationHelper: DisplayRotationHelper
 
     private var session: Session? = null
@@ -109,6 +123,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
             MeasureController.Mode.TOPO to findViewById(R.id.modeTopo),
         )
         tradeButton = findViewById(R.id.trade)
+        poleButton = findViewById(R.id.pole)
         rotationHelper = DisplayRotationHelper(this)
 
         jobFile = File(filesDir, PlanActivity.JOB_FILE)
@@ -132,10 +147,20 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         applyTrade(saved ?: Trade.ARCHITECTURE)
         if (saved == null) surface.post { pickTrade() }
         tradeButton.setOnClickListener { pickTrade() }
+        loadPole()
+        poleButton.setOnClickListener { showPoleDialog() }
 
         findViewById<TextView>(R.id.add).setOnClickListener {
             pending.add { frame ->
-                val hit = if (frame.camera.trackingState == TrackingState.TRACKING) bestHit(frame) else null
+                val tracking = frame.camera.trackingState == TrackingState.TRACKING
+                if (poleActive()) {
+                    val tip = averageTip()
+                    val anchor = if (tracking && tip != null) session?.createAnchor(Pose.makeTranslation(tip[0], tip[1], tip[2])) else null
+                    if (anchor == null) toast("Not tracking yet. Move the phone slowly.")
+                    else controller.addShot(anchor)
+                    return@add
+                }
+                val hit = if (tracking) bestHit(frame) else null
                 if (hit == null) toast("No surface under the crosshair yet. Move the phone slowly.")
                 else controller.addPoint(hit)
             }
@@ -155,6 +180,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
             unitsButton.text = unitsLabel()
             prefs.edit().putString("units", units.name).apply()
             updateElevOffset() // assumed elevations are 100 ft or 100 m
+            updatePoleButton()
         }
         findViewById<TextView>(R.id.job).setOnClickListener { showJob() }
         findViewById<TextView>(R.id.export).setOnClickListener { Share.export(this, job, units) }
@@ -295,19 +321,34 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
 
         drawPlanes(session)
 
-        val hit = bestHit(frame)
+        val pose = camera.displayOrientedPose
+        calibration?.let { samples -> FloatArray(16).also { pose.toMatrix(it, 0); samples.add(it) } }
+        val tipOffset = if (poleActive()) poleTip else null
+        val tip = tipOffset?.let { pose.transformPoint(it) }
+        if (tip != null) {
+            tipHistory.addLast(tip)
+            while (tipHistory.size > TIP_FRAMES) tipHistory.removeFirst()
+        } else tipHistory.clear()
+
+        val hit = if (tip == null) bestHit(frame) else null
         val aim = when {
+            tip != null -> OverlayView.Aim.GOOD
             hit == null -> OverlayView.Aim.NONE
             hit.distance > MAX_GOOD_DISTANCE_M -> OverlayView.Aim.ROUGH
             hit.trackable is Point -> OverlayView.Aim.ROUGH
             else -> OverlayView.Aim.GOOD
         }
-        val aimPoint = hit?.hitPose?.translation
+        val aimPoint = tip ?: hit?.hitPose?.translation
         val snap = controller.render(lineRenderer, viewProj, viewW, viewH, aimPoint, units)
 
-        val prompt = if (hit != null && hit.distance > MAX_GOOD_DISTANCE_M) {
-            snap.prompt + "\nYou're %.1f m away. Get closer for better accuracy.".format(hit.distance)
-        } else snap.prompt
+        val prompt = when {
+            calibrating -> "Calibrating the pole: keep the tip on the spot and slowly tilt the pole in a circle, " +
+                "about 20° each way, turning it a little as you go."
+            tip != null -> "Pole: set the tip on the spot, hold the pole steady and tap +. The crosshair isn't used."
+            hit != null && hit.distance > MAX_GOOD_DISTANCE_M ->
+                snap.prompt + "\nYou're %.1f m away. Get closer for better accuracy.".format(hit.distance)
+            else -> snap.prompt
+        }
 
         runOnUiThread {
             statusText.text = prompt
@@ -439,6 +480,158 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
         controller.elevOffset = p?.let { sp -> grid.firstOrNull { it.number == sp.number }?.let { it.z - sp.y } }
     }
 
+    // ---- Pole ----
+
+    private fun poleActive() = poleTip != null &&
+        (uiMode == MeasureController.Mode.POINTS || uiMode == MeasureController.Mode.TOPO)
+
+    private fun averageTip(): FloatArray? {
+        if (tipHistory.isEmpty()) return null
+        val out = FloatArray(3)
+        for (t in tipHistory) for (i in 0..2) out[i] += t[i] / tipHistory.size
+        return out
+    }
+
+    private fun loadPole() {
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        poleTip = if (prefs.getBoolean("poleOn", false)) poleOffset(prefs.getString("poleMount", "UPRIGHT")!!) else null
+        updatePoleButton()
+    }
+
+    /** Tip offset for a mount: upright (portrait, pole straight below the camera), flat (screen up, pole straight below the back camera), or calibrated. */
+    private fun poleOffset(mount: String): FloatArray? {
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val len = prefs.getFloat("poleLength", 0f)
+        return when (mount) {
+            "UPRIGHT" -> if (len > 0) floatArrayOf(0f, -len, 0f) else null
+            "FLAT" -> if (len > 0) floatArrayOf(0f, 0f, -len) else null
+            "CALIBRATED" -> if (prefs.contains("poleX")) {
+                floatArrayOf(prefs.getFloat("poleX", 0f), prefs.getFloat("poleY", 0f), prefs.getFloat("poleZ", 0f))
+            } else null
+            else -> null
+        }
+    }
+
+    private fun updatePoleButton() {
+        val shots = uiMode == MeasureController.Mode.POINTS || uiMode == MeasureController.Mode.TOPO
+        poleButton.visibility = if (shots) View.VISIBLE else View.GONE
+        val tip = poleTip
+        poleButton.text = if (tip == null) "Pole: off" else {
+            val len = kotlin.math.sqrt(tip.sumOf { (it * it).toDouble() })
+            "Pole: " + Format.elevation(len, units)
+        }
+        poleButton.setTextColor(if (tip == null) 0xFFFFFFFF.toInt() else 0xFFFFC107.toInt())
+    }
+
+    private fun showPoleDialog() {
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val f = gridFactor()
+        val group = RadioGroup(this)
+        fun option(id: Int, label: String) = RadioButton(this).apply { this.id = id; text = label }.also { group.addView(it) }
+        option(1, "Upright: phone in portrait, pole straight below the camera")
+        option(2, "Flat: phone screen up on top of the pole")
+        val calibrated = prefs.contains("poleX")
+        val calLabel = if (calibrated) {
+            val len = kotlin.math.sqrt(poleOffset("CALIBRATED")!!.sumOf { (it * it).toDouble() })
+            "Calibrated mount (tip ${Format.elevation(len, units)} from the camera)"
+        } else "Calibrated mount (tap Calibrate first)"
+        option(3, calLabel).isEnabled = calibrated
+        group.check(when (prefs.getString("poleMount", "UPRIGHT")) { "FLAT" -> 2; "CALIBRATED" -> if (calibrated) 3 else 1; else -> 1 })
+        val length = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            hint = "Camera lens to pole tip (${gridUnit()})"
+            val m = prefs.getFloat("poleLength", 0f)
+            if (m > 0) setText("%.3f".format(java.util.Locale.US, m * f))
+        }
+        val note = TextView(this).apply {
+            text = "Any rigid mount works. For upright or flat, measure from the camera lens to the tip. " +
+                "For any other mount, or for the best accuracy, use Calibrate: it measures the offset for you."
+            setPadding(0, pad / 2, 0, 0)
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(group); addView(length); addView(note)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Pole")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setPositiveButton("Use pole") { _, _ ->
+                val mount = when (group.checkedRadioButtonId) { 2 -> "FLAT"; 3 -> "CALIBRATED"; else -> "UPRIGHT" }
+                val edit = prefs.edit().putString("poleMount", mount)
+                length.text.toString().toDoubleOrNull()?.let { edit.putFloat("poleLength", (it / f).toFloat()) }
+                edit.apply()
+                if (poleOffset(mount) == null) {
+                    toast("Enter the pole length first")
+                    return@setPositiveButton
+                }
+                prefs.edit().putBoolean("poleOn", true).apply()
+                loadPole()
+            }
+            .setNeutralButton("Calibrate") { _, _ -> startCalibration() }
+            .setNegativeButton("Turn off") { _, _ ->
+                prefs.edit().putBoolean("poleOn", false).apply()
+                loadPole()
+            }
+            .show()
+    }
+
+    private fun startCalibration() {
+        AlertDialog.Builder(this)
+            .setTitle("Calibrate the pole")
+            .setMessage(
+                "Put the pole tip on one fixed spot, such as a nail or a crack, somewhere with texture around it. " +
+                    "Tap Start, then keep the tip on the spot and slowly tilt the pole in a circle, about 20° each way, " +
+                    "for ${CALIBRATION_SECONDS} seconds."
+            )
+            .setPositiveButton("Start") { _, _ ->
+                calibrating = true
+                pending.add { calibration = mutableListOf() }
+                surface.postDelayed({
+                    pending.add {
+                        val samples = calibration.orEmpty().toList()
+                        calibration = null
+                        runOnUiThread { finishCalibration(samples) }
+                    }
+                }, CALIBRATION_SECONDS * 1000L)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun finishCalibration(samples: List<FloatArray>) {
+        calibrating = false
+        val r = Pivot.solve(samples)
+        val problem = when {
+            r == null -> "Not enough tracking. Try again where the camera can see texture."
+            r.tiltDeg < 20 -> "Tilt the pole more, about 20° each way, so the offset can be measured. Try again."
+            r.rms > 0.02 -> "The tip seemed to move (fit ±${Format.length(r.rms, units)}). Keep it on the spot and try again."
+            else -> null
+        }
+        if (problem != null || r == null) {
+            AlertDialog.Builder(this).setTitle("Calibration failed").setMessage(problem)
+                .setPositiveButton("Try again") { _, _ -> startCalibration() }
+                .setNegativeButton("Cancel", null).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Pole calibrated")
+            .setMessage(
+                "The tip is ${Format.elevation(r.length, units)} from the camera " +
+                    "(fit ±${Format.length(r.rms, units)}, tilted ${r.tiltDeg.toInt()}°). Use it?"
+            )
+            .setPositiveButton("Use") { _, _ ->
+                getSharedPreferences("settings", MODE_PRIVATE).edit()
+                    .putFloat("poleX", r.tip[0].toFloat()).putFloat("poleY", r.tip[1].toFloat())
+                    .putFloat("poleZ", r.tip[2].toFloat())
+                    .putString("poleMount", "CALIBRATED").putBoolean("poleOn", true).apply()
+                loadPole()
+            }
+            .setNegativeButton("Discard", null)
+            .show()
+    }
+
     // ---- Trades ----
 
     private fun pickTrade() {
@@ -474,6 +667,7 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
     private fun selectMode(mode: MeasureController.Mode) {
         uiMode = mode
         selectTab(mode)
+        updatePoleButton()
         pending.add { controller.setMode(mode) }
         if (mode == MeasureController.Mode.TOPO) finishButton.text = "Code: $topoCode"
     }
@@ -718,6 +912,8 @@ class MainActivity : Activity(), GLSurfaceView.Renderer, MeasureController.Liste
 
     private companion object {
         const val MAX_GOOD_DISTANCE_M = 3.0f
+        const val TIP_FRAMES = 10
+        const val CALIBRATION_SECONDS = 12
         const val PLANE_COLOR = 0x66FFFFFF
     }
 }

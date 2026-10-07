@@ -82,10 +82,7 @@ class MeasureController(private val listener: Listener) {
             return
         }
         if (mode == Mode.POINTS || mode == Mode.TOPO) {
-            val p = LivePoint(nextLiveId++, hit.createAnchor())
-            points.add(p)
-            val pos = p.anchor.pos()
-            listener.onPointShot(p.id, pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble(), mode == Mode.TOPO)
+            addShot(hit.createAnchor())
             return
         }
         active.add(hit.createAnchor())
@@ -96,6 +93,14 @@ class MeasureController(private val listener: Listener) {
             active.clear()
             listener.onLineMeasured(kind, measure(line.a.pos(), line.b.pos(), kind))
         }
+    }
+
+    /** A survey or topo shot at [anchor]: a surface hit, or the tip of a pole. */
+    fun addShot(anchor: Anchor) {
+        val p = LivePoint(nextLiveId++, anchor)
+        points.add(p)
+        val pos = anchor.pos()
+        listener.onPointShot(p.id, pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble(), mode == Mode.TOPO)
     }
 
     /** "Close room" while outlining, "Skip height" while waiting for the ceiling. */
